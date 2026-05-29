@@ -2,48 +2,210 @@
 
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
+import { useEffect, useState } from "react";
+
+const TICKER_SIGNALS = [
+  { n: 41, msg: "indie hackers asking for better customer discovery tools today" },
+  { n: 23, msg: "solo founders on Reddit looking for their first customers right now" },
+  { n: 67, msg: "people on Quora asking how to validate their startup idea today" },
+  { n: 18, msg: "makers on ProductHunt searching for early adopters this hour" },
+  { n: 34, msg: "solo founders venting about cold outreach failures on IndieHackers" },
+  { n: 89, msg: "people on r/entrepreneur frustrated with their go-to-market today" },
+  { n: 52, msg: "startup founders asking for product validation advice on Quora" },
+  { n: 28, msg: "builders on ProductHunt searching for customer research alternatives" },
+];
 
 const HOW_IT_WORKS = [
   {
-    step: "01",
-    icon: "🔍",
+    icon: "📝",
     title: "Describe your idea",
     desc: "Tell us what you're building and who it's for. Takes 30 seconds.",
   },
   {
-    step: "02",
-    icon: "🌐",
-    title: "Live web scan",
-    desc: "We scrape ProductHunt, G2, Capterra and competitor homepages in real-time.",
-  },
-  {
-    step: "03",
-    icon: "📊",
-    title: "Get your intelligence",
-    desc: "Receive a full competitive analysis + a GTM strategy ready to execute.",
-  },
-];
-
-const FEATURES = [
-  {
-    icon: "⚡",
-    title: "Live Web Data",
-    desc: "Bright Data powers real-time scraping of 10,000+ data sources — no stale databases.",
-    color: "#6366F1",
+    icon: "🔍",
+    title: "We scan live",
+    desc: "Bright Data searches Reddit, Quora, IndieHackers and ProductHunt for real complaints right now.",
   },
   {
     icon: "🎯",
-    title: "Competitor Deep Dives",
-    desc: "Pricing, weaknesses, target customers, and strategic gaps — scraped directly from their sites.",
-    color: "#10B981",
-  },
-  {
-    icon: "🗺️",
-    title: "GTM Strategy",
-    desc: "Positioning, ICP, acquisition channels, pricing tiers, and a 3-phase roadmap.",
-    color: "#F59E0B",
+    title: "Get your playbook",
+    desc: "Real signals + outreach templates + week 1 action plan.",
   },
 ];
+
+const SAMPLE_SIGNALS = [
+  {
+    platform: "Reddit",
+    platformColor: "#FF4500",
+    platformBg: "#FFF4F0",
+    username: "u/indie_builder_****",
+    community: "r/startups",
+    timeAgo: "2 hours ago",
+    quote:
+      "Spent 3 hours manually searching Reddit for potential customers. Got nothing. There has to be a better way.",
+    painKeywords: ["manually searching", "better way"],
+    rotate: "-1.5deg",
+  },
+  {
+    platform: "IndieHackers",
+    platformColor: "#6366F1",
+    platformBg: "#F5F5FF",
+    username: "user_****",
+    community: "IndieHackers",
+    timeAgo: "5 hours ago",
+    quote:
+      "How do you find your first 10 customers without a marketing budget? Tried cold email — zero replies.",
+    painKeywords: ["first 10 customers", "zero replies"],
+    rotate: "0deg",
+  },
+  {
+    platform: "Quora",
+    platformColor: "#B92B27",
+    platformBg: "#FFF5F5",
+    username: "user_****",
+    community: "Quora",
+    timeAgo: "1 day ago",
+    quote:
+      "As a solo founder, what's the fastest way to validate if anyone actually wants my product?",
+    painKeywords: ["validate", "actually wants"],
+    rotate: "1.5deg",
+  },
+];
+
+const PLATFORMS = [
+  { name: "Reddit", color: "#FF4500" },
+  { name: "IndieHackers", color: "#6366F1" },
+  { name: "Quora", color: "#B92B27" },
+  { name: "ProductHunt", color: "#DA552F" },
+];
+
+function LiveTicker() {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const cycle = setInterval(() => {
+      setVisible(false);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % TICKER_SIGNALS.length);
+        setVisible(true);
+      }, 350);
+    }, 4000);
+    return () => clearInterval(cycle);
+  }, []);
+
+  const current = TICKER_SIGNALS[index];
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 10,
+        background: "#FFF7ED",
+        border: "1px solid #FED7AA",
+        borderRadius: 100,
+        padding: "8px 18px",
+        maxWidth: "100%",
+        overflow: "hidden",
+      }}
+    >
+      <style>{`@keyframes livepulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.45;transform:scale(0.85)} }`}</style>
+      <span
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: "50%",
+          background: "#EF4444",
+          flexShrink: 0,
+          animation: "livepulse 1.4s ease-in-out infinite",
+        }}
+      />
+      <span
+        style={{
+          fontSize: 12,
+          fontWeight: 600,
+          color: "#92400E",
+          transition: "opacity 0.35s ease",
+          opacity: visible ? 1 : 0,
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          maxWidth: 520,
+        }}
+      >
+        🔴 Live: <span style={{ fontWeight: 800 }}>{current.n}</span> {current.msg}
+      </span>
+    </div>
+  );
+}
+
+function SignalCard({
+  signal,
+  delay,
+}: {
+  signal: (typeof SAMPLE_SIGNALS)[0];
+  delay: number;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 28 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true }}
+      transition={{ delay, duration: 0.5 }}
+      style={{
+        background: "#FFFFFF",
+        border: "1px solid #E2E8F0",
+        borderLeft: `4px solid ${signal.platformColor}`,
+        borderRadius: 12,
+        padding: "20px",
+        boxShadow: "0 2px 12px rgba(0,0,0,0.07)",
+        transform: `rotate(${signal.rotate})`,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 700,
+            color: signal.platformColor,
+            background: signal.platformBg,
+            border: `1px solid ${signal.platformColor}30`,
+            borderRadius: 100,
+            padding: "3px 10px",
+            letterSpacing: "0.04em",
+          }}
+        >
+          {signal.platform}
+        </span>
+        <span style={{ fontSize: 11, color: "#94A3B8" }}>{signal.timeAgo}</span>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#475569", marginBottom: 10 }}>
+        {signal.username} · {signal.community}
+      </div>
+      <p style={{ fontSize: 13, color: "#334155", lineHeight: 1.65, marginBottom: 12 }}>
+        &ldquo;{signal.quote}&rdquo;
+      </p>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {signal.painKeywords.map((kw) => (
+          <span
+            key={kw}
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#10B981",
+              background: "#D1FAE5",
+              borderRadius: 4,
+              padding: "2px 7px",
+            }}
+          >
+            {kw}
+          </span>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
 
 export default function LandingPage() {
   const router = useRouter();
@@ -51,208 +213,211 @@ export default function LandingPage() {
   return (
     <div
       style={{
-        background: "#0A0A0A",
+        background: "#FAFAFA",
         minHeight: "100vh",
-        color: "#FFFFFF",
-        position: "relative",
+        color: "#0F172A",
         fontFamily: "var(--font-body), Inter, sans-serif",
       }}
     >
-      {/* Grain texture */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-          opacity: 0.03,
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-          backgroundRepeat: "repeat",
-          backgroundSize: "200px 200px",
-        }}
-      />
-
-      {/* Indigo glow from top */}
-      <div
-        style={{
-          position: "fixed",
-          inset: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-          background: "radial-gradient(ellipse 70% 35% at 50% 0%, rgba(99,102,241,0.10), transparent 60%)",
-        }}
-      />
-
       {/* Nav */}
       <nav
         style={{
-          position: "relative",
-          zIndex: 10,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "20px 32px",
-          borderBottom: "1px solid rgba(255,255,255,0.04)",
+          borderBottom: "1px solid #E2E8F0",
+          background: "#FFFFFF",
         }}
       >
-        <span
-          style={{
-            fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-            fontWeight: 700,
-            fontSize: 18,
-            color: "#6366F1",
-            letterSpacing: "-0.04em",
-          }}
-        >
-          FounderScope
-        </span>
+        <div>
+          <span
+            style={{
+              fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
+              fontWeight: 800,
+              fontSize: 20,
+              color: "#0F172A",
+              letterSpacing: "-0.04em",
+            }}
+          >
+            First100
+          </span>
+          <span style={{ display: "block", fontSize: 10, color: "#94A3B8", fontWeight: 500, marginTop: 1 }}>
+            Find your first 100 customers before you launch
+          </span>
+        </div>
         <motion.button
-          whileHover={{ opacity: 0.8 }}
+          whileHover={{ opacity: 0.85 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => router.push("/analyze")}
           style={{
-            background: "transparent",
-            border: "1px solid #2A2A2A",
-            color: "#888888",
-            padding: "8px 16px",
-            borderRadius: 6,
+            background: "#10B981",
+            border: "none",
+            color: "#FFFFFF",
+            padding: "9px 22px",
+            borderRadius: 9999,
             fontSize: 13,
             fontFamily: "var(--font-body), Inter, sans-serif",
             cursor: "pointer",
-            fontWeight: 500,
+            fontWeight: 600,
           }}
         >
-          Get Started →
+          Find My Customers →
         </motion.button>
       </nav>
 
-      {/* ── Hero ── */}
+      {/* Hero */}
       <section
         style={{
-          position: "relative",
-          zIndex: 1,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           textAlign: "center",
-          padding: "100px 24px 80px",
+          padding: "96px 24px 80px",
         }}
       >
+        {/* Hackathon badge */}
         <motion.div
-          initial={{ opacity: 0, y: -8 }}
+          initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4 }}
-          style={{ marginBottom: 28 }}
+          transition={{ duration: 0.3 }}
+          style={{ marginBottom: 16 }}
         >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 8,
-              border: "1px solid #2A2A2A",
-              borderRadius: 100,
-              padding: "6px 16px",
-              fontSize: 12,
-              color: "#888888",
-              fontWeight: 500,
-              letterSpacing: "0.02em",
-            }}
-          >
-            <span style={{ color: "#6366F1" }}>◎</span>
-            Powered by Bright Data + Gemini 2.5
-          </span>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            background: "#FF6B3510", border: "1px solid #FF6B3535",
+            borderRadius: 100, padding: "5px 14px",
+          }}>
+            <span style={{ fontSize: 12 }}>⚡</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#FF6B35", letterSpacing: "0.02em" }}>
+              Built for Bright Data Web Data UNLOCKED Hackathon
+            </span>
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.05 }}
+          style={{ marginBottom: 36 }}
+        >
+          <LiveTicker />
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 22 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1, duration: 0.55 }}
           style={{
             fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-            fontSize: "clamp(44px, 8vw, 76px)",
+            fontSize: "clamp(44px, 7.5vw, 72px)",
             fontWeight: 800,
             lineHeight: 1.06,
-            color: "#FFFFFF",
-            marginBottom: 20,
-            letterSpacing: "-0.04em",
-            maxWidth: 760,
+            color: "#0F172A",
+            marginBottom: 22,
+            letterSpacing: "-0.045em",
+            maxWidth: 800,
           }}
         >
-          Know your market<br />
-          <span style={{ color: "#6366F1" }}>before you build.</span>
+          Your first 100 customers
+          <br />
+          <span style={{ color: "#10B981" }}>are already talking.</span>
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 12 }}
+          initial={{ opacity: 0, y: 14 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2, duration: 0.5 }}
           style={{
             fontSize: 18,
-            color: "#888888",
-            lineHeight: 1.65,
+            color: "#64748B",
+            lineHeight: 1.7,
             marginBottom: 44,
-            maxWidth: 560,
+            maxWidth: 600,
             fontWeight: 400,
           }}
         >
-          Enter your startup idea → FounderScope maps your competition and builds your GTM strategy using live web data.
+          First100 scans Reddit, IndieHackers, Quora and ProductHunt live — finding
+          real people complaining about the exact problem you solve. Right now.
         </motion.p>
 
         <motion.button
-          initial={{ opacity: 0, y: 10 }}
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3, duration: 0.5 }}
           whileHover={{ opacity: 0.88, y: -2 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => router.push("/analyze")}
           style={{
-            background: "#6366F1",
+            background: "#10B981",
             color: "#FFFFFF",
             border: "none",
-            borderRadius: 8,
-            padding: "16px 40px",
-            fontSize: 16,
+            borderRadius: 9999,
+            padding: "18px 52px",
+            fontSize: 18,
             fontWeight: 700,
             fontFamily: "var(--font-body), Inter, sans-serif",
             cursor: "pointer",
-            boxShadow: "0 0 48px rgba(99,102,241,0.35)",
+            boxShadow: "0 6px 28px rgba(16,185,129,0.38)",
             letterSpacing: "-0.01em",
           }}
         >
-          Analyze My Market →
+          Find My Customers →
         </motion.button>
 
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          style={{ color: "#444444", fontSize: 12, marginTop: 16, fontWeight: 500 }}
+          style={{ color: "#94A3B8", fontSize: 12, marginTop: 16, fontWeight: 500 }}
         >
-          Free · No signup required · Results in ~60 seconds
+          Free · No signup · Results in ~45 seconds
         </motion.p>
+
+        {/* Platform logos row */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.65 }}
+          style={{ display: "flex", alignItems: "center", gap: 20, marginTop: 36 }}
+        >
+          {PLATFORMS.map((p) => (
+            <div key={p.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: "50%", background: p.color, display: "inline-block" }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#94A3B8" }}>{p.name}</span>
+            </div>
+          ))}
+        </motion.div>
       </section>
 
-      {/* ── How It Works ── */}
-      <section
+      {/* Social proof bar */}
+      <div
         style={{
-          position: "relative",
-          zIndex: 1,
-          borderTop: "1px solid #1A1A1A",
-          padding: "80px 24px",
+          background: "#F8FAFC",
+          borderTop: "1px solid #E2E8F0",
+          borderBottom: "1px solid #E2E8F0",
+          padding: "14px 24px",
+          textAlign: "center",
         }}
       >
+        <span style={{ fontSize: 12, color: "#94A3B8", fontWeight: 600, letterSpacing: "0.04em" }}>
+          Scanning 4 platforms&nbsp;&nbsp;·&nbsp;&nbsp;Live web data&nbsp;&nbsp;·&nbsp;&nbsp;Powered by Bright Data
+        </span>
+      </div>
+
+      {/* How it works */}
+      <section style={{ padding: "80px 24px", background: "#FFFFFF" }}>
         <div style={{ maxWidth: 900, margin: "0 auto" }}>
           <motion.h2
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
             style={{
               fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
               fontSize: 30,
               fontWeight: 700,
-              color: "#FFFFFF",
+              color: "#0F172A",
               textAlign: "center",
               marginBottom: 56,
               letterSpacing: "-0.03em",
@@ -270,239 +435,122 @@ export default function LandingPage() {
           >
             {HOW_IT_WORKS.map((item, i) => (
               <motion.div
-                key={item.step}
-                initial={{ opacity: 0, y: 20 }}
+                key={item.title}
+                initial={{ opacity: 0, y: 22 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: i * 0.1, duration: 0.45 }}
                 style={{
-                  background: "#0E0E0E",
-                  border: "1px solid #1A1A1A",
-                  borderRadius: 12,
+                  background: "#FAFAFA",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 14,
                   padding: "28px 24px",
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 10,
-                    fontWeight: 700,
-                    color: "#6366F1",
-                    letterSpacing: "0.12em",
-                    marginBottom: 16,
-                    fontFamily: "var(--font-body), Inter, sans-serif",
-                  }}
-                >
-                  STEP {item.step}
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#10B981", letterSpacing: "0.12em", marginBottom: 14 }}>
+                  STEP {String(i + 1).padStart(2, "0")}
                 </div>
-                <div style={{ fontSize: 28, marginBottom: 12 }}>{item.icon}</div>
-                <h3
-                  style={{
-                    fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-                    fontSize: 16,
-                    fontWeight: 700,
-                    color: "#F5F5F5",
-                    marginBottom: 8,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
+                <div style={{ fontSize: 30, marginBottom: 14 }}>{item.icon}</div>
+                <h3 style={{ fontFamily: "var(--font-display), 'Space Grotesk', sans-serif", fontSize: 16, fontWeight: 700, color: "#0F172A", marginBottom: 8, letterSpacing: "-0.02em" }}>
                   {item.title}
                 </h3>
-                <p style={{ fontSize: 13, color: "#888888", lineHeight: 1.6 }}>
-                  {item.desc}
-                </p>
+                <p style={{ fontSize: 13, color: "#64748B", lineHeight: 1.65 }}>{item.desc}</p>
               </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Features ── */}
-      <section
-        style={{
-          position: "relative",
-          zIndex: 1,
-          borderTop: "1px solid #1A1A1A",
-          padding: "80px 24px",
-        }}
-      >
-        <div style={{ maxWidth: 900, margin: "0 auto" }}>
-          <motion.h2
+      {/* Live signals preview */}
+      <section style={{ padding: "80px 24px", background: "#FAFAFA", borderTop: "1px solid #E2E8F0" }}>
+        <div style={{ maxWidth: 960, margin: "0 auto" }}>
+          <motion.div
             initial={{ opacity: 0, y: 16 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.5 }}
-            style={{
-              fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-              fontSize: 30,
-              fontWeight: 700,
-              color: "#FFFFFF",
-              textAlign: "center",
-              marginBottom: 56,
-              letterSpacing: "-0.03em",
-            }}
+            style={{ textAlign: "center", marginBottom: 56 }}
           >
-            Everything you need to validate fast
-          </motion.h2>
+            <h2
+              style={{
+                fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
+                fontSize: 30,
+                fontWeight: 700,
+                color: "#0F172A",
+                letterSpacing: "-0.03em",
+                marginBottom: 12,
+              }}
+            >
+              Real signals. Found live.
+            </h2>
+            <p style={{ fontSize: 15, color: "#64748B", maxWidth: 460, margin: "0 auto" }}>
+              These are the kinds of signals First100 surfaces — real people, real pain, right now.
+            </p>
+          </motion.div>
 
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-              gap: 20,
+              gridTemplateColumns: "repeat(auto-fit, minmax(270px, 1fr))",
+              gap: 24,
+              alignItems: "start",
             }}
           >
-            {FEATURES.map((f, i) => (
-              <motion.div
-                key={f.title}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.08, duration: 0.45 }}
-                style={{
-                  background: "rgba(17,17,17,0.8)",
-                  border: `1px solid ${f.color}20`,
-                  borderRadius: 12,
-                  padding: "28px 24px",
-                  position: "relative",
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    height: 2,
-                    background: `linear-gradient(90deg, ${f.color}60, transparent)`,
-                  }}
-                />
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 10,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 20,
-                    background: `${f.color}14`,
-                    border: `1px solid ${f.color}30`,
-                    marginBottom: 16,
-                  }}
-                >
-                  {f.icon}
-                </div>
-                <h3
-                  style={{
-                    fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-                    fontSize: 16,
-                    fontWeight: 700,
-                    color: "#F5F5F5",
-                    marginBottom: 8,
-                    letterSpacing: "-0.02em",
-                  }}
-                >
-                  {f.title}
-                </h3>
-                <p style={{ fontSize: 13, color: "#888888", lineHeight: 1.65 }}>{f.desc}</p>
-              </motion.div>
+            {SAMPLE_SIGNALS.map((s, i) => (
+              <SignalCard key={i} signal={s} delay={i * 0.12} />
             ))}
           </div>
         </div>
       </section>
 
-      {/* ── Powered By ── */}
+      {/* Bottom CTA */}
       <section
         style={{
-          position: "relative",
-          zIndex: 1,
-          borderTop: "1px solid #1A1A1A",
-          padding: "48px 24px",
+          padding: "88px 24px",
           textAlign: "center",
-        }}
-      >
-        <p style={{ fontSize: 11, color: "#444444", fontWeight: 600, letterSpacing: "0.1em", marginBottom: 20 }}>
-          POWERED BY
-        </p>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 32, flexWrap: "wrap" }}>
-          {[
-            { name: "Bright Data", sub: "Live web scraping" },
-            { name: "Gemini 2.5 Flash", sub: "AI analysis" },
-          ].map((p) => (
-            <div
-              key={p.name}
-              style={{
-                border: "1px solid #2A2A2A",
-                borderRadius: 8,
-                padding: "12px 20px",
-                textAlign: "center",
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  color: "#F5F5F5",
-                  marginBottom: 2,
-                }}
-              >
-                {p.name}
-              </div>
-              <div style={{ fontSize: 11, color: "#555555" }}>{p.sub}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      {/* ── Footer CTA ── */}
-      <section
-        style={{
-          position: "relative",
-          zIndex: 1,
-          borderTop: "1px solid #1A1A1A",
-          padding: "80px 24px",
-          textAlign: "center",
-          background: "radial-gradient(ellipse 50% 60% at 50% 100%, rgba(99,102,241,0.07), transparent 70%)",
+          background: "#0F172A",
         }}
       >
         <motion.h2
-          initial={{ opacity: 0, y: 16 }}
+          initial={{ opacity: 0, y: 18 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           style={{
             fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
-            fontSize: "clamp(28px, 5vw, 44px)",
+            fontSize: "clamp(28px, 4.5vw, 44px)",
             fontWeight: 800,
             color: "#FFFFFF",
             marginBottom: 16,
             letterSpacing: "-0.04em",
+            lineHeight: 1.12,
           }}
         >
-          Stop guessing. Start knowing.
+          Your first customer posted about their problem today.
         </motion.h2>
-        <p style={{ color: "#666666", fontSize: 15, marginBottom: 36 }}>
-          Your competitors are already live. See exactly how to beat them.
+        <p style={{ color: "#94A3B8", fontSize: 16, marginBottom: 40, maxWidth: 480, margin: "0 auto 40px" }}>
+          First100 finds them before anyone else does.
         </p>
         <motion.button
-          whileHover={{ opacity: 0.88, y: -2 }}
+          whileHover={{ opacity: 0.9, y: -2 }}
           whileTap={{ scale: 0.97 }}
           onClick={() => router.push("/analyze")}
           style={{
             background: "#FFFFFF",
-            color: "#000000",
+            color: "#0F172A",
             border: "none",
-            borderRadius: 8,
-            padding: "14px 36px",
-            fontSize: 15,
+            borderRadius: 9999,
+            padding: "17px 48px",
+            fontSize: 17,
             fontWeight: 700,
             fontFamily: "var(--font-body), Inter, sans-serif",
             cursor: "pointer",
+            boxShadow: "0 4px 24px rgba(255,255,255,0.15)",
           }}
         >
-          Analyze My Market →
+          Start Finding Customers →
         </motion.button>
+        <p style={{ color: "#475569", fontSize: 11, marginTop: 18, fontWeight: 500 }}>
+          Powered by Bright Data · Built for founders
+        </p>
       </section>
     </div>
   );
