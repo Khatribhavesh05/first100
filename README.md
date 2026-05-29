@@ -222,7 +222,7 @@ Built for the **[Web Data UNLOCKED Hackathon](https://lablab.ai/ai-hackathons/br
 ## 👤 Builder
 
 **Bhavesh Khatri** — B.Tech AI/ML @ JIET Jodhpur  
-Solo founder. Built in 5 days.
+Solo founder. Built in 24 hours.
 
 [![GitHub](https://img.shields.io/badge/GitHub-Khatribhavesh05-black?style=flat&logo=github)](https://github.com/Khatribhavesh05)
 
