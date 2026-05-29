@@ -8,8 +8,8 @@ const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-displ
 const inter = Inter({ subsets: ["latin"], variable: "--font-body" });
 
 export const metadata: Metadata = {
-  title: "FounderScope — Know Your Market Before You Build",
-  description: "AI-powered competitive intelligence and GTM strategy for founders, using live web data.",
+  title: "First100 — Find Your First 100 Customers Before You Launch",
+  description: "First100 scans Reddit, Twitter, IndieHackers and ProductHunt live — finding real people who are complaining about the exact problem you solve. Right now.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

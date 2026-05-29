@@ -1,31 +1,52 @@
-import Link from "next/link";
-import { buttonVariants } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+"use client";
+
+import { useRouter } from "next/navigation";
 
 export default function Navbar() {
+  const router = useRouter();
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="max-w-5xl mx-auto px-6 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 font-bold text-lg tracking-tight">
-          <span className="text-primary">◎</span>
-          <span>FounderScope</span>
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-6 text-sm text-muted-foreground">
-          <Link href="/analyze" className="hover:text-foreground transition-colors">Analyze</Link>
-          <Link href="/research" className="hover:text-foreground transition-colors">Research</Link>
-          <Link href="/strategy" className="hover:text-foreground transition-colors">Strategy</Link>
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <Link href="/research" className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "hidden md:inline-flex")}>
-            Sample Report
-          </Link>
-          <Link href="/analyze" className={cn(buttonVariants({ size: "sm" }))}>
-            Get Started
-          </Link>
-        </div>
-      </div>
-    </header>
+    <nav
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "20px 32px",
+        borderBottom: "1px solid #E2E8F0",
+        background: "#FFFFFF",
+      }}
+    >
+      <button
+        onClick={() => router.push("/")}
+        style={{
+          fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
+          fontWeight: 800,
+          fontSize: 18,
+          color: "#0F172A",
+          letterSpacing: "-0.04em",
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+        }}
+      >
+        First100
+      </button>
+      <button
+        onClick={() => router.push("/analyze")}
+        style={{
+          background: "#10B981",
+          border: "none",
+          color: "#FFFFFF",
+          padding: "9px 20px",
+          borderRadius: 8,
+          fontSize: 13,
+          fontFamily: "var(--font-body), Inter, sans-serif",
+          cursor: "pointer",
+          fontWeight: 600,
+        }}
+      >
+        Find My Customers →
+      </button>
+    </nav>
   );
 }
