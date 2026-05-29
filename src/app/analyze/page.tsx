@@ -59,7 +59,7 @@ function ScanningOverlay({
       style={{
         position: "fixed",
         inset: 0,
-        background: "#0A0F1A",
+        background: "#F9FAFB",
         zIndex: 9999,
         display: "flex",
         flexDirection: "column",
@@ -100,7 +100,7 @@ function ScanningOverlay({
           fontFamily: "var(--font-display), 'Space Grotesk', sans-serif",
           fontSize: "clamp(22px, 4vw, 30px)",
           fontWeight: 800,
-          color: "#F8FAFC",
+          color: "#111827",
           letterSpacing: "-0.04em",
           marginBottom: 8,
           textAlign: "center",
@@ -126,11 +126,12 @@ function ScanningOverlay({
         style={{
           width: "100%",
           maxWidth: 480,
-          background: "#111827",
-          border: "1px solid #1E293B",
+          background: "#FFFFFF",
+          border: "1px solid #E2E8F0",
           borderRadius: 14,
           padding: "20px 24px",
           marginBottom: 28,
+          boxShadow: "0 1px 4px rgba(0,0,0,0.06)",
         }}
       >
         {SCANNING_STEPS.map((step, i) => {
@@ -147,7 +148,7 @@ function ScanningOverlay({
                 alignItems: "center",
                 gap: 12,
                 padding: "9px 0",
-                borderBottom: i < SCANNING_STEPS.length - 1 ? "1px solid #1E293B" : "none",
+                borderBottom: i < SCANNING_STEPS.length - 1 ? "1px solid #F1F5F9" : "none",
               }}
             >
               <div
@@ -155,8 +156,8 @@ function ScanningOverlay({
                   width: 22,
                   height: 22,
                   borderRadius: "50%",
-                  background: isDone ? "#10B981" : isActive ? "transparent" : "#1E293B",
-                  border: `2px solid ${isDone ? "#10B981" : isActive ? "#10B981" : "#334155"}`,
+                  background: isDone ? "#10B981" : isActive ? "transparent" : "#F1F5F9",
+                  border: `2px solid ${isDone ? "#10B981" : isActive ? "#10B981" : "#D1D5DB"}`,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -171,7 +172,7 @@ function ScanningOverlay({
               <span
                 style={{
                   fontSize: 13,
-                  color: isDone ? "#10B981" : isActive ? "#F8FAFC" : "#475569",
+                  color: isDone ? "#10B981" : isActive ? "#111827" : "#6B7280",
                   fontWeight: isDone || isActive ? 600 : 400,
                   transition: "color 0.3s",
                 }}
@@ -349,6 +350,9 @@ export default function AnalyzePage() {
       localStorage.setItem("f1_targetCustomer", trimmedCustomer);
       localStorage.setItem("f1_geography", geography);
       localStorage.setItem("f1_signals", JSON.stringify(data.data));
+      // Redundant keys for robust back-navigation persistence
+      localStorage.setItem("f1_results_data", JSON.stringify(data.data));
+      localStorage.setItem("f1_scan_input", JSON.stringify({ idea: trimmedIdea, targetCustomer: trimmedCustomer, geography }));
       localStorage.setItem("f1_scan_meta", JSON.stringify({
         apiCallCount: data.apiCallCount ?? 4,
         scanDuration: data.scanDuration ?? scanDuration,

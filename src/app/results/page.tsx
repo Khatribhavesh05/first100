@@ -162,11 +162,24 @@ export default function ResultsPage() {
   const [playbookError, setPlaybookError] = useState<string | null>(null);
 
   useEffect(() => {
-    const raw = localStorage.getItem("f1_signals");
+    // Try primary key first, fall back to redundant key for robust back-nav
+    const raw = localStorage.getItem("f1_signals") ?? localStorage.getItem("f1_results_data");
     const metaRaw = localStorage.getItem("f1_scan_meta");
-    setIdea(localStorage.getItem("f1_idea") ?? "");
-    setTargetCustomer(localStorage.getItem("f1_targetCustomer") ?? "");
-    setGeography(localStorage.getItem("f1_geography") ?? "Global");
+    const inputRaw = localStorage.getItem("f1_scan_input");
+
+    if (inputRaw) {
+      try {
+        const input = JSON.parse(inputRaw) as { idea?: string; targetCustomer?: string; geography?: string };
+        setIdea(input.idea ?? "");
+        setTargetCustomer(input.targetCustomer ?? "");
+        setGeography(input.geography ?? "Global");
+      } catch { /* ignore */ }
+    } else {
+      setIdea(localStorage.getItem("f1_idea") ?? "");
+      setTargetCustomer(localStorage.getItem("f1_targetCustomer") ?? "");
+      setGeography(localStorage.getItem("f1_geography") ?? "Global");
+    }
+
     if (raw) {
       try { setReport(JSON.parse(raw) as SignalsReport); } catch { /* ignore */ }
     }
@@ -174,6 +187,12 @@ export default function ResultsPage() {
       try { setScanMeta(JSON.parse(metaRaw) as ScanMeta); } catch { /* ignore */ }
     }
   }, []);
+
+  const handleNewScan = () => {
+    // Clear all scan data so /analyze starts fresh
+    ["f1_idea", "f1_targetCustomer", "f1_geography", "f1_signals", "f1_results_data", "f1_scan_input", "f1_scan_meta", "f1_playbook"].forEach((k) => localStorage.removeItem(k));
+    router.push("/analyze");
+  };
 
   const handleGeneratePlaybook = async () => {
     setGeneratingPlaybook(true);
@@ -230,7 +249,14 @@ export default function ResultsPage() {
         <button onClick={() => router.push("/")} style={{ fontFamily: "var(--font-display), 'Space Grotesk', sans-serif", fontWeight: 800, fontSize: 17, color: "#10B981", letterSpacing: "-0.04em", background: "transparent", border: "none", cursor: "pointer" }}>
           First100
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <button
+            onClick={handleNewScan}
+            style={{ background: "transparent", border: "1px solid #E2E8F0", color: "#64748B", padding: "6px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "var(--font-body), Inter, sans-serif" }}
+          >
+            🔄 New Scan
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {[{ label: "Signals", done: true }, { label: "Playbook", done: false }].map((s, i) => (
             <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 600, color: s.done ? "#10B981" : "#94A3B8" }}>
@@ -242,6 +268,7 @@ export default function ResultsPage() {
               {i < 1 && <div style={{ width: 24, height: 1, background: "#E2E8F0" }} />}
             </div>
           ))}
+          </div>
         </div>
       </nav>
 
