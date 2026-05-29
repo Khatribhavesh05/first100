@@ -130,12 +130,12 @@ async function generateWithRetry(
     }
   }
 
-  // Final fallback: Claude claude-sonnet-4-20250514
+  // Final fallback: Claude claude-sonnet-4-5
   console.warn("[AI] All Gemini models failed, trying Claude fallback");
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
+      model: "claude-sonnet-4-5",
       max_tokens: 8192,
       system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
