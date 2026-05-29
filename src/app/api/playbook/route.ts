@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import Anthropic from "@anthropic-ai/sdk";
 import { type NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 300;
@@ -104,29 +105,47 @@ Output a single valid JSON object only. No markdown. No backticks. Start with { 
 
 async function generateWithRetry(
   systemPrompt: string,
-  userMsg: string,
-  retries = 3
+  userMsg: string
 ): Promise<string> {
-  const models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"];
+  const geminiModels = [
+    "gemini-2.5-flash-preview-05-20",
+    "gemini-1.5-flash-latest",
+    "gemini-1.5-pro-latest",
+  ];
   let lastError: unknown;
 
-  for (const modelName of models) {
-    for (let i = 0; i < retries; i++) {
-      try {
-        const model = genai.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
-        const result = await model.generateContent(userMsg);
-        return result.response.text().trim()
-          .replace(/^```json\n?/i, "")
-          .replace(/^```\n?/i, "")
-          .replace(/```\n?$/i, "")
-          .trim();
-      } catch (e) {
-        lastError = e;
-        console.warn(`[Gemini] ${modelName} attempt ${i + 1} failed:`, e instanceof Error ? e.message : e);
-        if (i < retries - 1) await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-      }
+  const strip = (t: string) =>
+    t.trim().replace(/^```json\n?/i, "").replace(/^```\n?/i, "").replace(/```\n?$/i, "").trim();
+
+  for (const modelName of geminiModels) {
+    try {
+      const model = genai.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
+      const result = await model.generateContent(userMsg);
+      console.log(`[AI] Success with ${modelName}`);
+      return strip(result.response.text());
+    } catch (e) {
+      lastError = e;
+      console.warn(`[AI] ${modelName} failed:`, e instanceof Error ? e.message : e);
+      await new Promise((r) => setTimeout(r, 1000));
     }
-    console.warn(`[Gemini] ${modelName} exhausted retries, trying fallback model`);
+  }
+
+  // Final fallback: Claude claude-sonnet-4-20250514
+  console.warn("[AI] All Gemini models failed, trying Claude fallback");
+  try {
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.create({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = response.content[0].type === "text" ? response.content[0].text : "";
+    console.log("[AI] Claude fallback succeeded");
+    return strip(text);
+  } catch (e) {
+    lastError = e;
+    console.error("[AI] Claude fallback failed:", e instanceof Error ? e.message : e);
   }
 
   throw lastError;
