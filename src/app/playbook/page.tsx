@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import type { PlaybookReport } from "@/app/api/playbook/route";
 
 function Toast({ message, onDone }: { message: string; onDone: () => void }) {
@@ -89,52 +88,182 @@ export default function PlaybookPage() {
     }
   };
 
-  const handleExport = async () => {
+  const handleExport = () => {
     if (!playbook || isExporting) return;
     setIsExporting(true);
 
     try {
-      await document.fonts.ready;
-
-      const content = document.getElementById("playbook-content");
-      if (!content) return;
-
-      // Temporarily show the print-only header/footer
-      const printHeader = document.getElementById("playbook-print-header");
-      const printFooter = document.getElementById("playbook-print-footer");
-      if (printHeader) printHeader.style.display = "flex";
-      if (printFooter) printFooter.style.display = "block";
-
-      const canvas = await html2canvas(content, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: "#FAFAFA",
-        // Skip elements with .no-print class (nav buttons, CTA, badge)
-        ignoreElements: (el) => el.classList.contains("no-print"),
-      });
-
-      // Restore print-only elements to hidden
-      if (printHeader) printHeader.style.display = "none";
-      if (printFooter) printFooter.style.display = "none";
-
-      const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imgHeightMm = (canvas.height * pageWidth) / canvas.width;
+      const PW = pdf.internal.pageSize.getWidth();   // 210
+      const PH = pdf.internal.pageSize.getHeight();  // 297
+      const ML = 20; // left margin
+      const MR = 20; // right margin
+      const CW = PW - ML - MR; // content width = 170
+      let y = ML;
 
-      // Split across pages
-      let yOffset = 0;
-      let remaining = imgHeightMm;
-      while (remaining > 0) {
-        if (yOffset > 0) pdf.addPage();
-        pdf.addImage(imgData, "PNG", 0, -yOffset, pageWidth, imgHeightMm);
-        yOffset += pageHeight;
-        remaining -= pageHeight;
+      // ── helpers ────────────────────────────────────────────────────────────
+
+      const newPageIfNeeded = (need: number) => {
+        if (y + need > PH - ML) { pdf.addPage(); y = ML; }
+      };
+
+      // Returns line-height in mm for a given font size
+      const lh = (size: number) => size * 0.4 + 1.2;
+
+      const txt = (
+        content: string,
+        x: number,
+        opts: { size?: number; bold?: boolean; r?: number; g?: number; b?: number; maxW?: number } = {}
+      ) => {
+        const { size = 10, bold = false, r = 30, g = 30, b = 30, maxW = CW } = opts;
+        pdf.setFontSize(size);
+        pdf.setFont("helvetica", bold ? "bold" : "normal");
+        pdf.setTextColor(r, g, b);
+        const lines = pdf.splitTextToSize(content, maxW);
+        const blockH = lines.length * lh(size);
+        newPageIfNeeded(blockH + 2);
+        pdf.text(lines as string[], x, y);
+        y += blockH;
+      };
+
+      const gap = (mm = 4) => { y += mm; };
+
+      const divider = (light = false) => {
+        gap(2);
+        pdf.setDrawColor(light ? 241 : 226, light ? 245 : 232, light ? 249 : 240);
+        pdf.setLineWidth(0.3);
+        pdf.line(ML, y, PW - MR, y);
+        gap(4);
+      };
+
+      const sectionBar = (label: string, rr: number, gg: number, bb: number) => {
+        gap(5);
+        newPageIfNeeded(12);
+        pdf.setFillColor(rr, gg, bb);
+        pdf.rect(ML, y, 3, 6, "F");
+        pdf.setFontSize(9);
+        pdf.setFont("helvetica", "bold");
+        pdf.setTextColor(rr, gg, bb);
+        pdf.text(label, ML + 6, y + 4.5);
+        y += 9;
+      };
+
+      const label = (text: string) =>
+        txt(text, ML, { size: 7.5, bold: true, r: 100, g: 116, b: 139 });
+
+      // ── Green accent bar at top ────────────────────────────────────────────
+      pdf.setFillColor(16, 185, 129);
+      pdf.rect(0, 0, PW, 2, "F");
+      y = 10;
+
+      // ── Header ────────────────────────────────────────────────────────────
+      txt("First100", ML, { size: 18, bold: true, r: 16, g: 185, b: 129 });
+      gap(1);
+      txt(idea || "Customer Playbook", ML, { size: 13, bold: true, r: 15, g: 23, b: 42 });
+      gap(1);
+      txt("Your complete roadmap to your first 100 customers", ML, { size: 9, r: 148, g: 163, b: 184 });
+      divider();
+
+      // ── Positioning ───────────────────────────────────────────────────────
+      sectionBar("POSITIONING", 16, 185, 129);
+      txt(`"${playbook.positioning.oneLiner}"`, ML, { size: 11, bold: true, r: 15, g: 23, b: 42 });
+      gap(4);
+      label("UNIQUE ANGLE");
+      gap(1);
+      txt(playbook.positioning.uniqueAngle, ML, { size: 9.5, r: 51, g: 65, b: 85 });
+      gap(3);
+      label("MESSAGING HOOK");
+      gap(1);
+      txt(playbook.positioning.messagingHook, ML, { size: 9.5, r: 51, g: 65, b: 85 });
+
+      // ── Ideal Customer ────────────────────────────────────────────────────
+      sectionBar("IDEAL CUSTOMER PROFILE", 245, 158, 11);
+      const icpRows: Array<[string, string]> = [
+        ["WHO THEY ARE",    playbook.idealCustomer.description],
+        ["WHERE THEY LIVE", playbook.idealCustomer.whereLive],
+        ["THEIR EXACT PAIN",playbook.idealCustomer.currentPain],
+        ["TRIGGER MOMENT",  playbook.idealCustomer.triggerMoment],
+      ];
+      for (const [lbl, val] of icpRows) {
+        label(lbl);
+        gap(0.5);
+        txt(val, ML, { size: 9.5, r: 71, g: 85, b: 105 });
+        gap(3);
       }
 
+      // ── Outreach Templates ────────────────────────────────────────────────
+      sectionBar("OUTREACH TEMPLATES", 99, 102, 241);
+      for (let i = 0; i < playbook.outreachTemplates.length; i++) {
+        const tmpl = playbook.outreachTemplates[i];
+        newPageIfNeeded(25);
+        const channelLine = `${i + 1}. ${tmpl.channel}${tmpl.community ? `  ·  ${tmpl.community}` : ""}`;
+        txt(channelLine, ML, { size: 10, bold: true, r: 15, g: 23, b: 42 });
+        if (tmpl.bestTime) {
+          gap(0.5);
+          txt(`Best time: ${tmpl.bestTime}`, ML, { size: 8, r: 148, g: 163, b: 184 });
+        }
+        gap(1.5);
+        if (tmpl.subject) {
+          label("SUBJECT");
+          gap(0.5);
+          txt(tmpl.subject, ML, { size: 9.5, bold: true, r: 15, g: 23, b: 42 });
+          gap(2);
+        }
+        if (tmpl.triggerPost) {
+          label("RESPOND TO");
+          gap(0.5);
+          txt(tmpl.triggerPost, ML, { size: 9, r: 71, g: 85, b: 105 });
+          gap(2);
+        }
+        const body = tmpl.body ?? tmpl.message ?? "";
+        if (body) {
+          label("MESSAGE");
+          gap(0.5);
+          txt(body, ML, { size: 9, r: 51, g: 65, b: 85 });
+        }
+        if (i < playbook.outreachTemplates.length - 1) divider(true);
+      }
+
+      // ── Week 1 Action Plan ────────────────────────────────────────────────
+      sectionBar("WEEK 1 ACTION PLAN", 16, 185, 129);
+      for (const day of playbook.weekOnePlan) {
+        newPageIfNeeded(20);
+        txt(`${day.day}  —  ${day.goal}  (${day.timeRequired})`, ML, { size: 10, bold: true, r: 15, g: 23, b: 42 });
+        gap(1.5);
+        for (let j = 0; j < day.actions.length; j++) {
+          txt(`${j + 1}.  ${day.actions[j]}`, ML + 5, { size: 9, r: 71, g: 85, b: 105, maxW: CW - 5 });
+          gap(0.8);
+        }
+        gap(4);
+      }
+
+      // ── Milestones ────────────────────────────────────────────────────────
+      sectionBar("MILESTONES", 99, 102, 241);
+      const stones: Array<[string, string]> = [
+        ["WEEK 1",   playbook.milestones.week1],
+        ["WEEK 2",   playbook.milestones.week2],
+        ["MONTH 1",  playbook.milestones.month1],
+      ];
+      for (const [lbl, val] of stones) {
+        label(lbl);
+        gap(0.5);
+        txt(val, ML, { size: 9.5, bold: true, r: 15, g: 23, b: 42 });
+        gap(3.5);
+      }
+
+      // ── Footer ────────────────────────────────────────────────────────────
+      gap(4);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.3);
+      pdf.line(ML, y, PW - MR, y);
+      gap(4);
+      pdf.setFontSize(7.5);
+      pdf.setFont("helvetica", "normal");
+      pdf.setTextColor(148, 163, 184);
+      pdf.text("Generated by First100  ·  Powered by Bright Data SERP API", ML, y);
+
       pdf.save("First100-Playbook.pdf");
+      setToast("Playbook downloaded ✓");
     } catch (err) {
       console.error("[Export] PDF generation failed:", err);
       setToast("PDF export failed. Please try again.");
