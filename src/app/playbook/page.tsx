@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
 import type { PlaybookReport } from "@/app/api/playbook/route";
 
 function Toast({ message, onDone }: { message: string; onDone: () => void }) {
@@ -67,9 +69,10 @@ export default function PlaybookPage() {
   const [idea, setIdea] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    const raw = localStorage.getItem("f1_playbook");
+    const raw = localStorage.getItem("f1_playbook") ?? localStorage.getItem("f1_playbook_data");
     setIdea(localStorage.getItem("f1_idea") ?? "");
     if (raw) {
       try { setPlaybook(JSON.parse(raw) as PlaybookReport); } catch { /* ignore */ }
@@ -86,32 +89,58 @@ export default function PlaybookPage() {
     }
   };
 
-  const handleExport = () => {
-    if (!playbook) return;
+  const handleExport = async () => {
+    if (!playbook || isExporting) return;
+    setIsExporting(true);
 
-    const prev = document.getElementById("__playbook_print__");
-    if (prev) prev.remove();
+    try {
+      await document.fonts.ready;
 
-    const style = document.createElement("style");
-    style.id = "__playbook_print__";
-    style.innerHTML = `
-      @media print {
-        nav, .no-print { display: none !important; }
-        #playbook-print-header { display: flex !important; }
-        #playbook-print-footer { display: block !important; }
-        body { background: white !important; font-size: 12px; }
-        * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-        @page { margin: 0.75in; }
-        h1, h2, h3 { page-break-after: avoid; }
-        pre { white-space: pre-wrap; word-break: break-word; }
+      const content = document.getElementById("playbook-content");
+      if (!content) return;
+
+      // Temporarily show the print-only header/footer
+      const printHeader = document.getElementById("playbook-print-header");
+      const printFooter = document.getElementById("playbook-print-footer");
+      if (printHeader) printHeader.style.display = "flex";
+      if (printFooter) printFooter.style.display = "block";
+
+      const canvas = await html2canvas(content, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#FAFAFA",
+        // Skip elements with .no-print class (nav buttons, CTA, badge)
+        ignoreElements: (el) => el.classList.contains("no-print"),
+      });
+
+      // Restore print-only elements to hidden
+      if (printHeader) printHeader.style.display = "none";
+      if (printFooter) printFooter.style.display = "none";
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imgHeightMm = (canvas.height * pageWidth) / canvas.width;
+
+      // Split across pages
+      let yOffset = 0;
+      let remaining = imgHeightMm;
+      while (remaining > 0) {
+        if (yOffset > 0) pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, -yOffset, pageWidth, imgHeightMm);
+        yOffset += pageHeight;
+        remaining -= pageHeight;
       }
-    `;
-    document.head.appendChild(style);
 
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => document.getElementById("__playbook_print__")?.remove(), 1000);
-    }, 150);
+      pdf.save("First100-Playbook.pdf");
+    } catch (err) {
+      console.error("[Export] PDF generation failed:", err);
+      setToast("PDF export failed. Please try again.");
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   if (!playbook) {
@@ -146,17 +175,18 @@ export default function PlaybookPage() {
             ← Signals
           </button>
           <motion.button
-            whileHover={{ opacity: 0.88 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={handleExport}
-            style={{ background: "#10B981", color: "#FFFFFF", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-body), Inter, sans-serif", boxShadow: "0 2px 8px rgba(16,185,129,0.25)" }}
+            whileHover={isExporting ? {} : { opacity: 0.88 }}
+            whileTap={isExporting ? {} : { scale: 0.97 }}
+            onClick={() => void handleExport()}
+            disabled={isExporting}
+            style={{ background: "#10B981", color: "#FFFFFF", border: "none", borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 700, cursor: isExporting ? "not-allowed" : "pointer", fontFamily: "var(--font-body), Inter, sans-serif", boxShadow: "0 2px 8px rgba(16,185,129,0.25)", opacity: isExporting ? 0.75 : 1 }}
           >
-            Export Playbook ↗
+            {isExporting ? "Generating PDF..." : "Export Playbook ↗"}
           </motion.button>
         </div>
       </nav>
 
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "40px 24px 96px" }}>
+      <div id="playbook-content" style={{ maxWidth: 860, margin: "0 auto", padding: "40px 24px 96px" }}>
 
         {/* Print-only header — hidden on screen, shown when printing */}
         <div
@@ -368,12 +398,13 @@ export default function PlaybookPage() {
             </p>
             <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
               <motion.button
-                whileHover={{ opacity: 0.88, y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={handleExport}
-                style={{ background: "#10B981", color: "#FFFFFF", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "var(--font-body), Inter, sans-serif", boxShadow: "0 4px 16px rgba(16,185,129,0.25)" }}
+                whileHover={isExporting ? {} : { opacity: 0.88, y: -1 }}
+                whileTap={isExporting ? {} : { scale: 0.97 }}
+                onClick={() => void handleExport()}
+                disabled={isExporting}
+                style={{ background: "#10B981", color: "#FFFFFF", border: "none", borderRadius: 8, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: isExporting ? "not-allowed" : "pointer", fontFamily: "var(--font-body), Inter, sans-serif", boxShadow: "0 4px 16px rgba(16,185,129,0.25)", opacity: isExporting ? 0.75 : 1 }}
               >
-                Export Playbook ↗
+                {isExporting ? "Generating PDF..." : "Export Playbook ↗"}
               </motion.button>
               <button
                 onClick={() => router.push("/analyze")}

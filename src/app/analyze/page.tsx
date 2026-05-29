@@ -346,6 +346,9 @@ export default function AnalyzePage() {
 
       const scanDuration = Math.round((Date.now() - startTime) / 1000);
 
+      // Clear old playbook so new scan always regenerates it
+      localStorage.removeItem("f1_playbook");
+      localStorage.removeItem("f1_playbook_data");
       localStorage.setItem("f1_idea", trimmedIdea);
       localStorage.setItem("f1_targetCustomer", trimmedCustomer);
       localStorage.setItem("f1_geography", geography);

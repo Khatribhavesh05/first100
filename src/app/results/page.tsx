@@ -190,11 +190,18 @@ export default function ResultsPage() {
 
   const handleNewScan = () => {
     // Clear all scan data so /analyze starts fresh
-    ["f1_idea", "f1_targetCustomer", "f1_geography", "f1_signals", "f1_results_data", "f1_scan_input", "f1_scan_meta", "f1_playbook"].forEach((k) => localStorage.removeItem(k));
+    ["f1_idea", "f1_targetCustomer", "f1_geography", "f1_signals", "f1_results_data", "f1_scan_input", "f1_scan_meta", "f1_playbook", "f1_playbook_data"].forEach((k) => localStorage.removeItem(k));
     router.push("/analyze");
   };
 
   const handleGeneratePlaybook = async () => {
+    // If a playbook was already generated for this scan, navigate directly
+    const existing = localStorage.getItem("f1_playbook_data");
+    if (existing) {
+      router.push("/playbook");
+      return;
+    }
+
     setGeneratingPlaybook(true);
     setPlaybookError(null);
     try {
@@ -205,7 +212,9 @@ export default function ResultsPage() {
       });
       const data = await res.json() as { success?: boolean; data?: unknown; error?: string };
       if (!res.ok || !data.success) throw new Error(data.error ?? "Playbook generation failed.");
+      // Save to both keys for robust back-navigation
       localStorage.setItem("f1_playbook", JSON.stringify(data.data));
+      localStorage.setItem("f1_playbook_data", JSON.stringify(data.data));
       router.push("/playbook");
     } catch (err) {
       setPlaybookError(err instanceof Error ? err.message : "Something went wrong.");
