@@ -107,7 +107,7 @@ async function generateWithRetry(
   userMsg: string,
   retries = 3
 ): Promise<string> {
-  const models = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest"];
+  const models = ["gemini-2.5-flash-preview-05-20", "gemini-2.0-flash"];
   let lastError: unknown;
 
   for (const modelName of models) {
