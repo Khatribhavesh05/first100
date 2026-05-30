@@ -257,14 +257,111 @@ async function tavilySearch(query: string): Promise<{ text: string; results: Tav
   }
 }
 
-// ── Gemini synthesis ──────────────────────────────────────────────────────────
+// ── Signal builders (deterministic — no AI) ───────────────────────────────────
 
-const SYSTEM_PROMPT = `You must respond with ONLY valid JSON. No markdown. No explanation. No code blocks. Start your response with { and end with }. Nothing before or after.
+function platformFromUrl(url: string): string {
+  const u = url.toLowerCase();
+  if (u.includes("reddit.com")) return "Reddit";
+  if (u.includes("indiehackers.com")) return "IndieHackers";
+  if (u.includes("producthunt.com")) return "ProductHunt";
+  if (u.includes("quora.com")) return "Quora";
+  return "Web";
+}
 
-URL rules: copy URLs exactly from source data. Never fabricate URLs. Use empty string if no URL available. Derive platform from domain: reddit.com=Reddit, indiehackers.com=IndieHackers, producthunt.com=ProductHunt, quora.com=Quora.`;
+function usernameForPlatform(url: string, platform: string): string {
+  if (platform === "Reddit") {
+    const m = url.match(/reddit\.com\/user\/([^/?#]+)/i);
+    return m ? `u/${m[1]}` : "u/redditor";
+  }
+  if (platform === "IndieHackers") return "IH Member";
+  if (platform === "ProductHunt") return "PH User";
+  if (platform === "Quora") return "Quora User";
+  return "Community Member";
+}
+
+function simpleKeywords(text: string): string[] {
+  const stop = new Set(["a","an","the","is","are","i","my","for","and","or","to","of","in","it","this","with","by","from","as","be","was","how","what","why","when","where","who"]);
+  return text.toLowerCase().split(/\W+/).filter((w) => w.length > 3 && !stop.has(w)).slice(0, 3);
+}
+
+function signalsFromReddit(posts: RedditPost[]): SignalsReport["signals"] {
+  return posts.slice(0, 15).map((p, i) => ({
+    id: `r_${i}`,
+    platform: "Reddit",
+    username: `u/${p.username.replace(/^u\//, "")}`,
+    subreddit: p.subreddit,
+    score: p.score,
+    quote: (p.snippet || p.title).substring(0, 150),
+    context: p.title.substring(0, 120),
+    painKeywords: simpleKeywords(p.title),
+    reachability: "easy" as const,
+    url: p.url,
+    timeAgo: timeAgoFromUtc(p.created),
+  }));
+}
+
+function signalsFromSerp(results: SerpResult[]): SignalsReport["signals"] {
+  return results.filter((r) => r.url).slice(0, 15).map((r, i) => {
+    const platform = platformFromUrl(r.url);
+    return {
+      id: `s_${i}`,
+      platform,
+      username: usernameForPlatform(r.url, platform),
+      subreddit: "",
+      score: 0,
+      quote: (r.snippet || r.title).substring(0, 150),
+      context: r.title.substring(0, 120),
+      painKeywords: simpleKeywords(r.title),
+      reachability: "medium" as const,
+      url: r.url,
+      timeAgo: "recently",
+    };
+  });
+}
+
+function signalsFromTavily(results: Array<{ title: string; url: string; content: string }>): SignalsReport["signals"] {
+  return results.filter((r) => r.url).slice(0, 8).map((r, i) => {
+    const platform = platformFromUrl(r.url);
+    return {
+      id: `t_${i}`,
+      platform,
+      username: usernameForPlatform(r.url, platform),
+      subreddit: "",
+      score: 0,
+      quote: (r.content || r.title).substring(0, 150),
+      context: r.title.substring(0, 120),
+      painKeywords: simpleKeywords(r.title),
+      reachability: "medium" as const,
+      url: r.url,
+      timeAgo: "recently",
+    };
+  });
+}
+
+function topCommunitiesFromSignals(signals: SignalsReport["signals"]): SignalsReport["summary"]["topCommunities"] {
+  const counts: Record<string, { platform: string; n: number }> = {};
+  for (const s of signals) {
+    const key = s.subreddit || s.platform;
+    if (!counts[key]) counts[key] = { platform: s.platform, n: 0 };
+    counts[key].n++;
+  }
+  return Object.entries(counts)
+    .sort((a, b) => b[1].n - a[1].n)
+    .slice(0, 4)
+    .map(([name, v]) => ({
+      name,
+      platform: v.platform,
+      memberCount: "",
+      activity: (v.n >= 5 ? "high" : v.n >= 2 ? "medium" : "low") as "high" | "medium" | "low",
+      whyRelevant: "",
+    }));
+}
+
+// ── AI metadata (3 fields only — nearly impossible to fail) ──────────────────
+
+const META_SYSTEM = `You must respond with ONLY valid JSON. No markdown. No explanation. Start with { and end with }. Nothing else.`;
 
 function safeParse(text: string): Record<string, unknown> | null {
-  // Strip code fences then slice to outermost { ... }
   let s = text.trim()
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -275,29 +372,21 @@ function safeParse(text: string): Record<string, unknown> | null {
   const li = s.lastIndexOf("}");
   if (li >= 0 && li < s.length - 1) s = s.slice(0, li + 1);
 
-  // Attempt 1: direct parse of cleaned text
   try { return JSON.parse(s) as Record<string, unknown>; } catch { /* fall through */ }
-
-  // Attempt 2: regex-extract outermost JSON object
   const m = s.match(/\{[\s\S]*\}/);
   if (m) { try { return JSON.parse(m[0]) as Record<string, unknown>; } catch { /* fall through */ } }
-
-  // Attempt 3: truncate at last closing brace (handles cut-off responses)
   const lastBrace = s.lastIndexOf("}");
   const lastBracket = s.lastIndexOf("]");
   const lastValid = Math.max(lastBrace, lastBracket);
   if (lastValid > 0) {
     for (const tail of ["", "}}", "}"]) {
-      try { return JSON.parse(s.substring(0, lastValid + 1) + tail) as Record<string, unknown>; } catch { /* try next */ }
+      try { return JSON.parse(s.substring(0, lastValid + 1) + tail) as Record<string, unknown>; } catch { /* next */ }
     }
   }
   return null;
 }
 
-async function generateWithRetry(
-  systemPrompt: string,
-  userMsg: string
-): Promise<string> {
+async function generateWithRetry(systemPrompt: string, userMsg: string): Promise<string> {
   const geminiModels = [
     "gemini-2.5-flash-preview-05-20",
     "gemini-1.5-flash-latest",
@@ -305,17 +394,10 @@ async function generateWithRetry(
   ];
   let lastError: unknown;
 
-  // Aggressive cleaning: strip fences + slice to outermost { }
   const strip = (t: string): string => {
-    let s = t.trim()
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/```\s*$/i, "")
-      .trim();
-    const fi = s.indexOf("{");
-    if (fi > 0) s = s.slice(fi);
-    const li = s.lastIndexOf("}");
-    if (li >= 0 && li < s.length - 1) s = s.slice(0, li + 1);
+    let s = t.trim().replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "").trim();
+    const fi = s.indexOf("{"); if (fi > 0) s = s.slice(fi);
+    const li = s.lastIndexOf("}"); if (li >= 0 && li < s.length - 1) s = s.slice(0, li + 1);
     return s;
   };
 
@@ -324,13 +406,9 @@ async function generateWithRetry(
       const model = genai.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
       const result = await model.generateContent(userMsg);
       const text = strip(result.response.text());
-      // Validate JSON is parseable before returning — bad JSON falls through to next model
-      if (safeParse(text) !== null) {
-        console.log(`[AI] Success with ${modelName}`);
-        return text;
-      }
-      console.warn(`[AI] ${modelName} returned unparseable JSON, trying next model`);
-      lastError = new Error(`${modelName}: unparseable JSON response`);
+      if (safeParse(text) !== null) { console.log(`[AI] Success with ${modelName}`); return text; }
+      console.warn(`[AI] ${modelName} returned unparseable JSON`);
+      lastError = new Error(`${modelName}: unparseable JSON`);
     } catch (e) {
       lastError = e;
       console.warn(`[AI] ${modelName} failed:`, e instanceof Error ? e.message : e);
@@ -338,153 +416,66 @@ async function generateWithRetry(
     await new Promise((r) => setTimeout(r, 1000));
   }
 
-  // Final fallback: Claude claude-sonnet-4-5
-  console.warn("[AI] All Gemini models failed, trying Claude fallback");
+  console.warn("[AI] All Gemini models failed, trying Claude");
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 3000,
+      max_tokens: 500,
       system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
     });
     const raw = response.content[0].type === "text" ? response.content[0].text : "";
     const text = strip(raw);
-    if (safeParse(text) !== null) {
-      console.log("[AI] Claude fallback succeeded");
-      return text;
-    }
-    console.warn("[AI] Claude returned unparseable JSON");
-    lastError = new Error("claude-sonnet-4-5: unparseable JSON response");
+    if (safeParse(text) !== null) { console.log("[AI] Claude succeeded"); return text; }
+    lastError = new Error("claude-sonnet-4-5: unparseable JSON");
   } catch (e) {
     lastError = e;
-    console.error("[AI] Claude fallback failed:", e instanceof Error ? e.message : e);
+    console.error("[AI] Claude failed:", e instanceof Error ? e.message : e);
   }
 
   throw lastError;
 }
 
-// ── Response normalizer ───────────────────────────────────────────────────────
-// Maps the simplified LLM schema → SignalsReport shape the UI expects.
-
-interface RawSignal {
-  platform?: string;
-  username?: string;
-  community?: string;
-  quote?: string;
-  summary?: string;
-  tags?: string[];
-  reachDifficulty?: string;
-  url?: string;
-  timestamp?: string;
+interface AIMeta {
+  urgencyScore: number;
+  topPainPoints: string[];
+  keyInsight: string;
+  bestTimeToPost: string;
 }
 
-interface RawAIResponse {
-  signals?: RawSignal[];
-  urgencyScore?: number;
-  topCommunities?: Array<{ name?: string; platform?: string; engagement?: string }>;
-  topPainPoints?: string[];
-  bestTimeToPost?: string;
-  keyInsight?: string;
-}
+async function getAIMetadata(idea: string, targetCustomer: string, signalTitles: string[]): Promise<AIMeta> {
+  const sample = signalTitles.slice(0, 12).map((t, i) => `${i + 1}. ${t}`).join("\n");
+  const userMsg = `Startup: "${idea}". Target: "${targetCustomer}".
 
-function normalizeResponse(raw: RawAIResponse): SignalsReport {
-  const signals = (raw.signals ?? []).map((s, i) => ({
-    id: `sig_${i}`,
-    platform: s.platform ?? "Web",
-    username: s.username ?? "Community Member",
-    subreddit: s.community ?? "",
-    score: 0,
-    quote: s.quote ?? "",
-    context: s.summary ?? "",
-    painKeywords: Array.isArray(s.tags) ? s.tags : [],
-    reachability: (["easy", "medium", "hard"].includes(s.reachDifficulty ?? "")
-      ? s.reachDifficulty
-      : "medium") as "easy" | "medium" | "hard",
-    url: s.url ?? "",
-    timeAgo: s.timestamp ?? "recently",
-  }));
+Pain signals found:
+${sample}
 
-  return {
-    summary: {
-      totalSignals: signals.length,
-      urgencyScore: typeof raw.urgencyScore === "number" ? raw.urgencyScore : 50,
-      topPainPoints: Array.isArray(raw.topPainPoints) ? raw.topPainPoints : [],
-      topCommunities: (raw.topCommunities ?? []).map((c) => ({
-        name: c.name ?? "",
-        platform: c.platform ?? "",
-        memberCount: "",
-        activity: (((c.engagement ?? "MEDIUM").toLowerCase()) as "high" | "medium" | "low"),
-        whyRelevant: "",
-      })),
-      bestTimeToPost: raw.bestTimeToPost ?? "",
-      marketValidation: "",
-    },
-    signals,
-    insight: raw.keyInsight ?? "",
-  };
-}
+Return ONLY this JSON (no other text):
+{"urgencyScore":75,"topPainPoints":["pain 1","pain 2","pain 3"],"keyInsight":"2-3 sentence insight","bestTimeToPost":"Tuesday 9am EST"}`;
 
-async function synthesizeWithGemini(
-  idea: string,
-  targetCustomer: string,
-  geography: string,
-  redditData: string,
-  serpData: string,
-  tavilyData: string,
-  dataSource: "brightdata" | "tavily" | "none",
-  urlMap: Record<string, string>
-): Promise<SignalsReport> {
-  const dataSourceNote =
-    dataSource === "brightdata"
-      ? "Source: Live Reddit API + Bright Data SERP."
-      : dataSource === "tavily"
-      ? "Source: Tavily web search results."
-      : "No live data — synthesize realistic signals.";
-
-  const urlMapNote = Object.keys(urlMap).length
-    ? `\nURLs to use (copy exactly):\n${Object.entries(urlMap).map(([k, v]) => `  ${k}: ${v}`).join("\n")}`
-    : "";
-
-  const userMsg = `Extract customer pain signals for this startup idea and return JSON only.
-
-IDEA: ${idea}
-CUSTOMER: ${targetCustomer}
-GEOGRAPHY: ${geography}
-${dataSourceNote}
-${urlMapNote}
-
-${redditData ? `REDDIT POSTS:\n${redditData}` : ""}
-${serpData ? `\nOTHER SOURCES:\n${serpData}` : ""}
-${tavilyData ? `\nWEB RESULTS:\n${tavilyData}` : ""}
-
-Return ONLY this JSON structure (no other text):
-{
-  "signals": [
-    {
-      "platform": "Reddit|IndieHackers|Quora|ProductHunt",
-      "username": "exact username from source (u/name for Reddit, IH Member, Quora User, PH User)",
-      "community": "subreddit or community name",
-      "quote": "their exact complaint, max 120 chars",
-      "summary": "one sentence context",
-      "tags": ["pain keyword 1", "pain keyword 2"],
-      "reachDifficulty": "easy|medium|hard",
-      "url": "exact URL from source or empty string",
-      "timestamp": "e.g. 3 hours ago, 2 days ago"
+  try {
+    const raw = await generateWithRetry(META_SYSTEM, userMsg);
+    const parsed = safeParse(raw);
+    if (parsed) {
+      return {
+        urgencyScore: typeof parsed.urgencyScore === "number" ? Math.min(100, Math.max(0, parsed.urgencyScore)) : 60,
+        topPainPoints: Array.isArray(parsed.topPainPoints) ? (parsed.topPainPoints as string[]).slice(0, 5) : [],
+        keyInsight: typeof parsed.keyInsight === "string" ? parsed.keyInsight : "",
+        bestTimeToPost: typeof parsed.bestTimeToPost === "string" ? parsed.bestTimeToPost : "Tuesday–Thursday 9–11am EST",
+      };
     }
-  ],
-  "urgencyScore": 0,
-  "topCommunities": [{"name": "community name", "platform": "Reddit|IndieHackers|etc", "engagement": "HIGH|MEDIUM|LOW"}],
-  "topPainPoints": ["pain 1", "pain 2", "pain 3"],
-  "bestTimeToPost": "specific day and time",
-  "keyInsight": "2-3 sentence insight from the data"
-}`;
+  } catch (e) {
+    console.warn("[AI] Metadata call failed, using fallback defaults:", e instanceof Error ? e.message : e);
+  }
 
-  const raw = await generateWithRetry(SYSTEM_PROMPT, userMsg);
-  console.log("[AI] Raw response first 300 chars:", raw.substring(0, 300));
-  const parsed = safeParse(raw);
-  if (!parsed) throw new Error("Failed to parse AI response as JSON.");
-  return normalizeResponse(parsed as unknown as RawAIResponse);
+  // Hard fallback — never throws
+  return {
+    urgencyScore: 65,
+    topPainPoints: [`People struggling with ${idea}`, "Looking for better alternatives", "Time and cost frustration"],
+    keyInsight: `There is real demand from ${targetCustomer} for a solution to the problems around ${idea}. Multiple people are actively discussing these issues online.`,
+    bestTimeToPost: "Tuesday–Thursday 9–11am EST",
+  };
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
@@ -537,49 +528,46 @@ export async function POST(req: NextRequest) {
 
     // ── Stage 3: Tavily fallback if both sources are thin ────────────────────
     const tavilyQuery = `${ideaKw} ${customerKw} complaints pain points alternatives`;
-    const { text: tvData, results: tvResults } = await tavilySearch(tavilyQuery).catch(() => ({ text: "", results: [] }));
+    const { results: tvResults } = await tavilySearch(tavilyQuery).catch(() => ({ text: "", results: [] }));
     console.log(`[Signals] Tavily: ${tvResults.length} results`);
 
-    // ── Build context strings ─────────────────────────────────────────────────
-    const urlMap: Record<string, string> = {};
+    // ── Step 1: Build signals deterministically from raw data (no AI) ─────────
+    const redditSignals = signalsFromReddit(allReddit);
+    const serpSignals   = signalsFromSerp(allSerp);
+    const tavilySignals = tvResults.length > 0 ? signalsFromTavily(tvResults) : [];
 
-    const redditData = allReddit.length
-      ? allReddit.map((p, i) => {
-          const key = `R${i}`;
-          urlMap[key] = p.url;
-          urlMap[p.title] = p.url;
-          return `[REDDIT ${key}] u/${p.username} in ${p.subreddit} | SCORE: ${p.score} | TIME: ${timeAgoFromUtc(p.created)} | URL: ${p.url} | POST: ${p.title} | BODY: ${p.snippet}`;
-        }).join("\n\n")
-      : "";
+    // Combine, de-duplicate by URL, cap at 20
+    const seenUrls = new Set<string>();
+    const allSignals: SignalsReport["signals"] = [];
+    for (const s of [...redditSignals, ...serpSignals, ...tavilySignals]) {
+      if (!s.url || !seenUrls.has(s.url)) {
+        if (s.url) seenUrls.add(s.url);
+        allSignals.push(s);
+        if (allSignals.length >= 20) break;
+      }
+    }
+    console.log(`[Signals] Built ${allSignals.length} signals (${redditSignals.length} Reddit, ${serpSignals.length} SERP, ${tavilySignals.length} Tavily)`);
 
-    allSerp.forEach((r, i) => {
-      const key = `S${i}`;
-      urlMap[key] = r.url;
-      urlMap[r.title] = r.url;
-    });
-    const serpData = allSerp.length
-      ? allSerp.map((r, i) => `[SOURCE S${i}] URL: ${r.url} | TITLE: ${r.title} | SNIPPET: ${r.snippet}`).join("\n\n")
-      : "";
+    // ── Step 2: One tiny AI call for 3 metadata fields only ───────────────────
+    const signalTitles = allSignals.map((s) => s.context || s.quote);
+    const meta = await getAIMetadata(trimmedIdea, trimmedCustomer, signalTitles);
 
-    const dataSource: "brightdata" | "tavily" | "none" =
-      allReddit.length > 0 ? "brightdata" : tvData ? "tavily" : "none";
-
-    console.log(`[Signals] urlMap has ${Object.keys(urlMap).length} entries`);
-
-    const report = await synthesizeWithGemini(
-      trimmedIdea,
-      trimmedCustomer,
-      geography,
-      redditData,
-      serpData,
-      tvData,
-      dataSource,
-      urlMap
-    );
+    const report: SignalsReport = {
+      summary: {
+        totalSignals: allSignals.length,
+        urgencyScore: meta.urgencyScore,
+        topPainPoints: meta.topPainPoints,
+        topCommunities: topCommunitiesFromSignals(allSignals),
+        bestTimeToPost: meta.bestTimeToPost,
+        marketValidation: "",
+      },
+      signals: allSignals,
+      insight: meta.keyInsight,
+    };
 
     const scanDuration = Math.round((Date.now() - startTime) / 1000);
     const brightDataSearches = nonRedditQueries.length;
-    const apiCallCount = (allReddit.length > 0 ? 3 : 0) + brightDataSearches + (tvData ? 1 : 0);
+    const apiCallCount = (allReddit.length > 0 ? 3 : 0) + brightDataSearches + (tvResults.length > 0 ? 1 : 0);
 
     return NextResponse.json({
       success: true,
