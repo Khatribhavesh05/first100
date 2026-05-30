@@ -267,32 +267,34 @@ CRITICAL URL RULES:
 - If no URL is available, use an empty string — never fabricate a URL.`;
 
 function safeParse(text: string): Record<string, unknown> | null {
-  const cleaned = text
-    .trim()
-    .replace(/^```json\n?/i, "")
-    .replace(/^```\n?/i, "")
-    .replace(/```\n?$/i, "")
+  // Strip code fences then slice to outermost { ... }
+  let s = text.trim()
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/```\s*$/i, "")
     .trim();
+  const fi = s.indexOf("{");
+  if (fi > 0) s = s.slice(fi);
+  const li = s.lastIndexOf("}");
+  if (li >= 0 && li < s.length - 1) s = s.slice(0, li + 1);
 
-  try {
-    return JSON.parse(cleaned) as Record<string, unknown>;
-  } catch {
-    const lastBrace = cleaned.lastIndexOf("}");
-    const lastBracket = cleaned.lastIndexOf("]");
-    const lastValid = Math.max(lastBrace, lastBracket);
-    if (lastValid > 0) {
-      try {
-        return JSON.parse(cleaned.substring(0, lastValid + 1) + "}}") as Record<string, unknown>;
-      } catch {
-        try {
-          return JSON.parse(cleaned.substring(0, lastValid + 1)) as Record<string, unknown>;
-        } catch {
-          return null;
-        }
-      }
+  // Attempt 1: direct parse of cleaned text
+  try { return JSON.parse(s) as Record<string, unknown>; } catch { /* fall through */ }
+
+  // Attempt 2: regex-extract outermost JSON object
+  const m = s.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]) as Record<string, unknown>; } catch { /* fall through */ } }
+
+  // Attempt 3: truncate at last closing brace (handles cut-off responses)
+  const lastBrace = s.lastIndexOf("}");
+  const lastBracket = s.lastIndexOf("]");
+  const lastValid = Math.max(lastBrace, lastBracket);
+  if (lastValid > 0) {
+    for (const tail of ["", "}}", "}"]) {
+      try { return JSON.parse(s.substring(0, lastValid + 1) + tail) as Record<string, unknown>; } catch { /* try next */ }
     }
-    return null;
   }
+  return null;
 }
 
 async function generateWithRetry(
@@ -306,20 +308,37 @@ async function generateWithRetry(
   ];
   let lastError: unknown;
 
-  const strip = (t: string) =>
-    t.trim().replace(/^```json\n?/i, "").replace(/^```\n?/i, "").replace(/```\n?$/i, "").trim();
+  // Aggressive cleaning: strip fences + slice to outermost { }
+  const strip = (t: string): string => {
+    let s = t.trim()
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
+    const fi = s.indexOf("{");
+    if (fi > 0) s = s.slice(fi);
+    const li = s.lastIndexOf("}");
+    if (li >= 0 && li < s.length - 1) s = s.slice(0, li + 1);
+    return s;
+  };
 
   for (const modelName of geminiModels) {
     try {
       const model = genai.getGenerativeModel({ model: modelName, systemInstruction: systemPrompt });
       const result = await model.generateContent(userMsg);
-      console.log(`[AI] Success with ${modelName}`);
-      return strip(result.response.text());
+      const text = strip(result.response.text());
+      // Validate JSON is parseable before returning — bad JSON falls through to next model
+      if (safeParse(text) !== null) {
+        console.log(`[AI] Success with ${modelName}`);
+        return text;
+      }
+      console.warn(`[AI] ${modelName} returned unparseable JSON, trying next model`);
+      lastError = new Error(`${modelName}: unparseable JSON response`);
     } catch (e) {
       lastError = e;
       console.warn(`[AI] ${modelName} failed:`, e instanceof Error ? e.message : e);
-      await new Promise((r) => setTimeout(r, 1000));
     }
+    await new Promise((r) => setTimeout(r, 1000));
   }
 
   // Final fallback: Claude claude-sonnet-4-5
@@ -332,9 +351,14 @@ async function generateWithRetry(
       system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
     });
-    const text = response.content[0].type === "text" ? response.content[0].text : "";
-    console.log("[AI] Claude fallback succeeded");
-    return strip(text);
+    const raw = response.content[0].type === "text" ? response.content[0].text : "";
+    const text = strip(raw);
+    if (safeParse(text) !== null) {
+      console.log("[AI] Claude fallback succeeded");
+      return text;
+    }
+    console.warn("[AI] Claude returned unparseable JSON");
+    lastError = new Error("claude-sonnet-4-5: unparseable JSON response");
   } catch (e) {
     lastError = e;
     console.error("[AI] Claude fallback failed:", e instanceof Error ? e.message : e);
