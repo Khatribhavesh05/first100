@@ -259,12 +259,9 @@ async function tavilySearch(query: string): Promise<{ text: string; results: Tav
 
 // ── Gemini synthesis ──────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a JSON-only response bot. You must ALWAYS respond with a valid JSON object and nothing else. No explanations, no markdown, no backticks, no text before or after the JSON. Your entire response must be parseable by JSON.parse(). Start with { and end with }.
+const SYSTEM_PROMPT = `You must respond with ONLY valid JSON. No markdown. No explanation. No code blocks. Start your response with { and end with }. Nothing before or after.
 
-CRITICAL URL RULES:
-- For each signal, you MUST use the exact URL from the SOURCE data provided. Do not generate, shorten, or modify URLs. Copy them character-for-character.
-- Derive the platform from the URL domain: reddit.com → "Reddit", indiehackers.com → "IndieHackers", producthunt.com → "ProductHunt", quora.com → "Quora". Do not guess platform from context.
-- If no URL is available, use an empty string — never fabricate a URL.`;
+URL rules: copy URLs exactly from source data. Never fabricate URLs. Use empty string if no URL available. Derive platform from domain: reddit.com=Reddit, indiehackers.com=IndieHackers, producthunt.com=ProductHunt, quora.com=Quora.`;
 
 function safeParse(text: string): Record<string, unknown> | null {
   // Strip code fences then slice to outermost { ... }
@@ -347,7 +344,7 @@ async function generateWithRetry(
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const response = await anthropic.messages.create({
       model: "claude-sonnet-4-5",
-      max_tokens: 8192,
+      max_tokens: 3000,
       system: systemPrompt,
       messages: [{ role: "user", content: userMsg }],
     });
@@ -367,6 +364,67 @@ async function generateWithRetry(
   throw lastError;
 }
 
+// ── Response normalizer ───────────────────────────────────────────────────────
+// Maps the simplified LLM schema → SignalsReport shape the UI expects.
+
+interface RawSignal {
+  platform?: string;
+  username?: string;
+  community?: string;
+  quote?: string;
+  summary?: string;
+  tags?: string[];
+  reachDifficulty?: string;
+  url?: string;
+  timestamp?: string;
+}
+
+interface RawAIResponse {
+  signals?: RawSignal[];
+  urgencyScore?: number;
+  topCommunities?: Array<{ name?: string; platform?: string; engagement?: string }>;
+  topPainPoints?: string[];
+  bestTimeToPost?: string;
+  keyInsight?: string;
+}
+
+function normalizeResponse(raw: RawAIResponse): SignalsReport {
+  const signals = (raw.signals ?? []).map((s, i) => ({
+    id: `sig_${i}`,
+    platform: s.platform ?? "Web",
+    username: s.username ?? "Community Member",
+    subreddit: s.community ?? "",
+    score: 0,
+    quote: s.quote ?? "",
+    context: s.summary ?? "",
+    painKeywords: Array.isArray(s.tags) ? s.tags : [],
+    reachability: (["easy", "medium", "hard"].includes(s.reachDifficulty ?? "")
+      ? s.reachDifficulty
+      : "medium") as "easy" | "medium" | "hard",
+    url: s.url ?? "",
+    timeAgo: s.timestamp ?? "recently",
+  }));
+
+  return {
+    summary: {
+      totalSignals: signals.length,
+      urgencyScore: typeof raw.urgencyScore === "number" ? raw.urgencyScore : 50,
+      topPainPoints: Array.isArray(raw.topPainPoints) ? raw.topPainPoints : [],
+      topCommunities: (raw.topCommunities ?? []).map((c) => ({
+        name: c.name ?? "",
+        platform: c.platform ?? "",
+        memberCount: "",
+        activity: (((c.engagement ?? "MEDIUM").toLowerCase()) as "high" | "medium" | "low"),
+        whyRelevant: "",
+      })),
+      bestTimeToPost: raw.bestTimeToPost ?? "",
+      marketValidation: "",
+    },
+    signals,
+    insight: raw.keyInsight ?? "",
+  };
+}
+
 async function synthesizeWithGemini(
   idea: string,
   targetCustomer: string,
@@ -379,68 +437,54 @@ async function synthesizeWithGemini(
 ): Promise<SignalsReport> {
   const dataSourceNote =
     dataSource === "brightdata"
-      ? "DATA SOURCE: Live Reddit API + Bright Data SERP results."
+      ? "Source: Live Reddit API + Bright Data SERP."
       : dataSource === "tavily"
-      ? "DATA SOURCE: Web search results via Tavily. Label platform as 'Web' where the source domain is not clearly Reddit/IH/PH/Quora."
-      : "DATA SOURCE: No live data — synthesize realistic signals from your knowledge.";
+      ? "Source: Tavily web search results."
+      : "No live data — synthesize realistic signals.";
 
   const urlMapNote = Object.keys(urlMap).length
-    ? `\nURL REFERENCE MAP (copy these URLs exactly — do not modify):\n${Object.entries(urlMap).map(([k, v]) => `  [${k}] → ${v}`).join("\n")}`
+    ? `\nURLs to use (copy exactly):\n${Object.entries(urlMap).map(([k, v]) => `  ${k}: ${v}`).join("\n")}`
     : "";
 
-  const userMsg = `You are a customer discovery agent for First100. A founder has described their startup idea. You have live data from Reddit and other platforms showing real people complaining about related problems. Extract real customer signals and return them as JSON.
+  const userMsg = `Extract customer pain signals for this startup idea and return JSON only.
 
-STARTUP IDEA: ${idea}
-TARGET CUSTOMER: ${targetCustomer}
+IDEA: ${idea}
+CUSTOMER: ${targetCustomer}
 GEOGRAPHY: ${geography}
 ${dataSourceNote}
 ${urlMapNote}
 
-${redditData ? `REDDIT API RESULTS (real posts — use exact usernames, subreddits, URLs, scores, and timeAgo values):\n${redditData}` : ""}
-${serpData ? `\nOTHER PLATFORM RESULTS (IndieHackers / ProductHunt / Quora):\n${serpData}` : ""}
-${tavilyData ? `\nWEB SEARCH RESULTS (Tavily):\n${tavilyData}` : ""}
+${redditData ? `REDDIT POSTS:\n${redditData}` : ""}
+${serpData ? `\nOTHER SOURCES:\n${serpData}` : ""}
+${tavilyData ? `\nWEB RESULTS:\n${tavilyData}` : ""}
 
-Return this exact JSON structure with no other text:
+Return ONLY this JSON structure (no other text):
 {
-  "summary": {
-    "totalSignals": number,
-    "urgencyScore": number (0-100, how urgent is this pain right now),
-    "topPainPoints": ["specific pain 1 from actual data", "pain 2", "pain 3"],
-    "topCommunities": [
-      {
-        "name": "exact community name e.g. r/lawyers",
-        "platform": "Reddit | IndieHackers | ProductHunt | Quora | Web",
-        "memberCount": "estimated size",
-        "activity": "high | medium | low",
-        "whyRelevant": "one sentence"
-      }
-    ],
-    "bestTimeToPost": "specific day and time with reasoning",
-    "marketValidation": "one paragraph — is this pain real and urgent based on the data"
-  },
   "signals": [
     {
-      "id": "unique id",
-      "platform": "Reddit | IndieHackers | ProductHunt | Quora | Web",
-      "username": "for Reddit: use the exact u/username from the source data (include u/ prefix). For IndieHackers: use 'IH Member' or the real username if visible in the URL/title. For Quora: use 'Quora User'. For ProductHunt: use 'PH Maker' or 'PH User'. NEVER use 'Anonymous' or 'web_****' or empty string.",
-      "subreddit": "for Reddit signals: the exact subreddit e.g. r/lawyers. Empty string for non-Reddit.",
-      "score": "for Reddit signals: the upvote score as a number. 0 for non-Reddit.",
-      "quote": "their actual complaint or pain expression — max 150 chars, make it feel real and specific",
-      "context": "what they were asking for or complaining about in one sentence",
-      "painKeywords": ["keyword1", "keyword2"],
-      "reachability": "easy | medium | hard",
-      "url": "MUST be copied exactly from the SOURCE URL above — do not modify or generate. Empty string if none.",
-      "timeAgo": "for Reddit posts: use the exact timeAgo value from source data (e.g. '3 hours ago', '2 days ago'). For IndieHackers/Quora/ProductHunt: generate a realistic relative time like '3 hours ago', '1 day ago', '2 days ago', or '5 hours ago'. Never use just 'recently'."
+      "platform": "Reddit|IndieHackers|Quora|ProductHunt",
+      "username": "exact username from source (u/name for Reddit, IH Member, Quora User, PH User)",
+      "community": "subreddit or community name",
+      "quote": "their exact complaint, max 120 chars",
+      "summary": "one sentence context",
+      "tags": ["pain keyword 1", "pain keyword 2"],
+      "reachDifficulty": "easy|medium|hard",
+      "url": "exact URL from source or empty string",
+      "timestamp": "e.g. 3 hours ago, 2 days ago"
     }
   ],
-  "insight": "Most important insight from all signals in 2-3 sentences. Be specific about what the data shows."
+  "urgencyScore": 0,
+  "topCommunities": [{"name": "community name", "platform": "Reddit|IndieHackers|etc", "engagement": "HIGH|MEDIUM|LOW"}],
+  "topPainPoints": ["pain 1", "pain 2", "pain 3"],
+  "bestTimeToPost": "specific day and time",
+  "keyInsight": "2-3 sentence insight from the data"
 }`;
 
   const raw = await generateWithRetry(SYSTEM_PROMPT, userMsg);
-  console.log("[Gemini] Raw response first 500 chars:", raw.substring(0, 500));
+  console.log("[AI] Raw response first 300 chars:", raw.substring(0, 300));
   const parsed = safeParse(raw);
-  if (!parsed) throw new Error("Failed to parse Gemini response as JSON.");
-  return parsed as unknown as SignalsReport;
+  if (!parsed) throw new Error("Failed to parse AI response as JSON.");
+  return normalizeResponse(parsed as unknown as RawAIResponse);
 }
 
 // ── Handler ───────────────────────────────────────────────────────────────────
